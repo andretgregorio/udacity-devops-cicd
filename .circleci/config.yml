@@ -22,7 +22,20 @@ jobs:
           command: |
             echo "Hello World"
 
-#  build-frontend:
+  build-frontend:
+    docker:
+      - image: circleci/node:12
+    steps:
+      - checkout
+      - run:
+          name: Install Project Dependencies
+          command: cd /home/circleci/project/frontend && npm install
+      - run:
+          name: Lint
+          command: cd /home/circleci/project/frontend && npm run lint
+      - run:
+          name: Build
+          command: cd /home/circleci/project/frontend && npm run build
 
 #  build-frontend:
 
@@ -42,13 +55,13 @@ jobs:
 
 #  deploy-frontend:
 
-#  deploy-backend:  
+#  deploy-backend:
 
 #  smoke-test:
 
 #  cloudfront-update:
 
 workflows:
-  default:
+  integration:
     jobs:
-      - hello-world
+      - build-frontend
