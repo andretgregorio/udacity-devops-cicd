@@ -60,7 +60,17 @@ jobs:
           name: Test
           command: cd /home/circleci/project/backend && npm run test
 
-#  can-frontend:
+  scan-frontend:
+    docker:
+      - image: circleci/node:12
+    steps:
+      - checkout
+      - run:
+          name: Install NPM Dependencies
+          command: cd /home/circleci/project/frontend && npm install
+      - run:
+          name: Audit NPM Dependencies
+          command: cd /home/circleci/project/frontend && npm run npm audit --audit-level=critical
 
 #  scan-backend:
 
@@ -89,3 +99,6 @@ workflows:
       - test-backend:
           requires:
             - build-backend
+      - scan-frontend:
+          requires:
+            - test-frontend
