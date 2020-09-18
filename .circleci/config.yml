@@ -28,11 +28,8 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Project Dependencies
+          name: Install NPM Dependencies
           command: cd /home/circleci/project/frontend && npm install
-      - run:
-          name: Lint
-          command: cd /home/circleci/project/frontend && npm run lint
       - run:
           name: Build
           command: cd /home/circleci/project/frontend && npm run build
