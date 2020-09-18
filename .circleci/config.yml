@@ -36,9 +36,29 @@ jobs:
           name: Build
           command: cd /home/circleci/project/backend && npm run build
 
-#  test-frontend:
+  test-frontend:
+    docker:
+      - image: circleci/node:12
+    steps:
+      - checkout
+      - run:
+          name: Install NPM Dependencies
+          command: cd /home/circleci/project/frontend && npm install
+      - run:
+          name: Test
+          command: cd /home/circleci/project/frontend && npm run test
 
-#  est-backend:
+  test-backend:
+    docker:
+      - image: circleci/node:12
+    steps:
+      - checkout
+      - run:
+          name: Install NPM Dependencies
+          command: cd /home/circleci/project/backend && npm install
+      - run:
+          name: Test
+          command: cd /home/circleci/project/backend && npm run test
 
 #  can-frontend:
 
@@ -63,3 +83,9 @@ workflows:
     jobs:
       - build-frontend
       - build-backend
+      - test-frontend:
+          requires:
+            - build-frontend
+      - test-backend:
+          requires:
+            - build-backend
