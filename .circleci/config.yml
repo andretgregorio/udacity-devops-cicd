@@ -2,10 +2,22 @@ version: 2.1
 
 ### It's a good practice to keep your commands at the top of the config file. In this project, you'll need at least 2 commands:
 
-# commands:
-#   destroy-environment:
-#     description: Destroy backend and frontend cloudformation stacks given a workflow ID.
-#     ...
+commands:
+  destroy-environment:
+    description: Destroy backend and frontend cloudformation stacks given a workflow ID.
+    steps:
+      - run:
+          name: Destroy Backend Infrastructure
+          when: on_fail
+          command: aws cloudformation delete-stack --stack-name backend-${CIRCLE_WORKFLOW_ID:0:7}
+      - run:
+          name: Destroy Frontend Infrastructure
+          when: on_fail
+          command: aws cloudformation delete-stack --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7}
+      - run:
+          name: Destroy Cloudfront Infrastructure
+          when: on_fail
+          command: aws cloudformation delete-stack --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7}
 
 #   revert-migration:
 #     description: Revert the last migration if successfully run in the current workflow.
@@ -84,7 +96,45 @@ jobs:
           name: Audit NPM Dependencies
           command: cd /home/circleci/project/backend && npm audit --audit-level=critical
 
-#  deploy-infrastructure:
+  deploy-infrastructure:
+    docker:
+      - image: amazon/aws-cli
+    steps:
+      - checkout
+      - run:
+          name: Deploy Backend Infrastructure
+          command: |
+            aws cloudformation deploy \
+            --template-file .circleci/files/backend.yml \
+            --stack-name backend-${CIRCLE_WORKFLOW_ID:0:7} \
+            --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
+      - run:
+          name: Save Backend URL
+          when: on_success
+          command: |
+            BACKEND_API=$(aws ec2 describe-instances \
+              --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
+              --query 'Reservations[*].Instances[*].PublicDnsName' \
+              --output text)
+            curl -H "Content-Type: text/plain" -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" \
+              --request PUT \
+              --data $BACKEND_API \
+              https://api.memstash.io/values/backend_api
+      - run:
+          name: Deploy Frontend Infrastructure
+          command: |
+            aws cloudformation deploy \
+            --template-file .circleci/files/frontend.yml \
+            --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7} \
+            --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
+      - run:
+          name: Deploy Cloudfront Infrastructure
+          command: |
+            aws cloudformation deploy \
+            --template-file .circleci/files/cloudfront.yml \
+            --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7} \
+            --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
+      - destroy-environment
 
 #  configure-infrastructure:
 
@@ -99,7 +149,7 @@ jobs:
 #  cloudfront-update:
 
 workflows:
-  integration:
+  build-test-and-deploy:
     jobs:
       - build-frontend
       - build-backend
@@ -115,3 +165,7 @@ workflows:
       - scan-backend:
           requires:
             - test-backend
+      - deploy-infrastructure:
+          requires:
+            - scan-frontend
+            - scan-backend
