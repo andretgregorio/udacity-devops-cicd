@@ -120,23 +120,42 @@ jobs:
               --request PUT \
               --data $BACKEND_API \
               https://api.memstash.io/values/backend_api
-      - run:
-          name: Deploy Frontend Infrastructure
-          command: |
-            aws cloudformation deploy \
-            --template-file .circleci/files/frontend.yml \
-            --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7} \
-            --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
-      - run:
-          name: Deploy Cloudfront Infrastructure
-          command: |
-            aws cloudformation deploy \
-            --template-file .circleci/files/cloudfront.yml \
-            --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7} \
-            --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
-      - destroy-environment
+      # - run:
+      #     name: Deploy Frontend Infrastructure
+      #     command: |
+      #       aws cloudformation deploy \
+      #       --template-file .circleci/files/frontend.yml \
+      #       --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7} \
+      #       --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
+      # - run:
+      #     name: Deploy Cloudfront Infrastructure
+      #     command: |
+      #       aws cloudformation deploy \
+      #       --template-file .circleci/files/cloudfront.yml \
+      #       --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7} \
+      #       --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
+      # - destroy-environment
 
-#  configure-infrastructure:
+  configure-infrastructure:
+    docker:
+      - image: python:3.7-alpine3.11
+    steps:
+      - checkout
+      - add_ssh_keys:
+          fingerprints:
+            - "ea:7d:21:ef:24:86:2a:4f:0b:b1:c3:fa:3f:e9:2a:4d"
+      - run:
+          name: Install ansible
+          command: apk add --update ansible
+      - run:
+          name: Install curl
+          command: apk add curl
+      - run:
+          name: Configure backend server
+          command: |
+            echo $(curl -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" --request GET https://api.memstash.io/values/backend_api) >> .circleci/ansible/inventory
+            cat .circleci/ansible/inventory
+            ansible-playbook -i .circleci/ansible/inventory .circleci/ansible/config-server-playbook.yml
 
 #  run-migrations:
 
@@ -151,21 +170,24 @@ jobs:
 workflows:
   build-test-and-deploy:
     jobs:
-      - build-frontend
-      - build-backend
-      - test-frontend:
+      # - build-frontend
+      # - build-backend
+      # - test-frontend:
+      #     requires:
+      #       - build-frontend
+      # - test-backend:
+      #     requires:
+      #       - build-backend
+      # - scan-frontend:
+      #     requires:
+      #       - test-frontend
+      # - scan-backend:
+      #     requires:
+      #       - test-backend
+      - deploy-infrastructure
+      # requires:
+      #   - scan-frontend
+      #   - scan-backend
+      - configure-infrastructure:
           requires:
-            - build-frontend
-      - test-backend:
-          requires:
-            - build-backend
-      - scan-frontend:
-          requires:
-            - test-frontend
-      - scan-backend:
-          requires:
-            - test-backend
-      - deploy-infrastructure:
-          requires:
-            - scan-frontend
-            - scan-backend
+            - deploy-infrastructure
