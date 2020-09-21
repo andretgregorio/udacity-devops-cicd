@@ -114,25 +114,25 @@ jobs:
       - image: amazon/aws-cli
     steps:
       - checkout
-      - run:
-          name: Deploy Backend Infrastructure
-          command: |
-            aws cloudformation deploy \
-            --template-file .circleci/files/backend.yml \
-            --stack-name backend-${CIRCLE_WORKFLOW_ID:0:7} \
-            --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
-      - run:
-          name: Save Backend URL
-          when: on_success
-          command: |
-            BACKEND_API=$(aws ec2 describe-instances \
-              --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
-              --query 'Reservations[*].Instances[*].PublicDnsName' \
-              --output text)
-            curl -H "Content-Type: text/plain" -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" \
-              --request PUT \
-              --data $BACKEND_API \
-              https://api.memstash.io/values/backend_api
+      # - run:
+      #     name: Deploy Backend Infrastructure
+      #     command: |
+      #       aws cloudformation deploy \
+      #       --template-file .circleci/files/backend.yml \
+      #       --stack-name backend-${CIRCLE_WORKFLOW_ID:0:7} \
+      #       --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
+      # - run:
+      #     name: Save Backend URL
+      #     when: on_success
+      #     command: |
+      #       BACKEND_API=$(aws ec2 describe-instances \
+      #         --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
+      #         --query 'Reservations[*].Instances[*].PublicDnsName' \
+      #         --output text)
+      #       curl -H "Content-Type: text/plain" -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" \
+      #         --request PUT \
+      #         --data $BACKEND_API \
+      #         https://api.memstash.io/values/backend_api
       - run:
           name: Deploy Frontend Infrastructure
           command: |
@@ -140,13 +140,13 @@ jobs:
             --template-file .circleci/files/frontend.yml \
             --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7} \
             --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
-      - run:
-          name: Deploy Cloudfront Infrastructure
-          command: |
-            aws cloudformation deploy \
-            --template-file .circleci/files/cloudfront.yml \
-            --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7} \
-            --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
+      # - run:
+      #     name: Deploy Cloudfront Infrastructure
+      #     command: |
+      #       aws cloudformation deploy \
+      #       --template-file .circleci/files/cloudfront.yml \
+      #       --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7} \
+      #       --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
       - destroy-environment
 
   configure-infrastructure:
@@ -194,7 +194,40 @@ jobs:
       - revert-migration
       - destroy-environment
 
-#  deploy-frontend:
+  deploy-frontend:
+    docker:
+      - image: python:3.7-alpine3.11
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            apk --no-cache add curl
+            apk add --no-cache --upgrade bash
+      - run:
+          name: Export Backend API URL
+          command: |
+            BACKEND_URL=$(curl -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" --request GET https://api.memstash.io/values/backend_api)
+            export default API_URL=$BACKEND_URL
+      - run:
+          name: Install NPM
+          command: apk add --update npm
+      - run:
+          name: Install AWS-CLI
+          command: |
+            pip3 install awscli
+      - run:
+          name: Install Application NPM Dependencies
+          command: cd frontend && npm install
+      - run:
+          name: Build Application
+          command: cd frontend && npm run build
+      - run:
+          name: Copy files to S3
+          command: |
+            aws s3 cp frontend/dist s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7}/ --recursive
+      - revert-migration
+      - destroy-environment
 
 #  deploy-backend:
 
@@ -205,27 +238,27 @@ jobs:
 workflows:
   build-test-and-deploy:
     jobs:
-      - build-frontend
-      - build-backend
-      - test-frontend:
-          requires:
-            - build-frontend
-      - test-backend:
-          requires:
-            - build-backend
-      - scan-frontend:
-          requires:
-            - test-frontend
-      - scan-backend:
-          requires:
-            - test-backend
-      - deploy-infrastructure:
-          filters:
-            branches:
-              only: main
-          requires:
-            - scan-frontend
-            - scan-backend
+      # - build-frontend
+      # - build-backend
+      # - test-frontend:
+      #     requires:
+      #       - build-frontend
+      # - test-backend:
+      #     requires:
+      #       - build-backend
+      # - scan-frontend:
+      #     requires:
+      #       - test-frontend
+      # - scan-backend:
+      #     requires:
+      #       - test-backend
+      - deploy-infrastructure
+      # filters:
+      #   branches:
+      #     only: main
+      # requires:
+      #   - scan-frontend
+      #   - scan-backend
       - configure-infrastructure:
           filters:
             branches:
@@ -236,5 +269,11 @@ workflows:
           filters:
             branches:
               only: main
+          requires:
+            - deploy-infrastructure
+      - deploy-frontend:
+          # filters:
+          #   branches:
+          #     only: main
           requires:
             - deploy-infrastructure
