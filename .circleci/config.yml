@@ -19,8 +19,21 @@ commands:
           when: on_fail
           command: aws cloudformation delete-stack --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7}
 
-#   revert-migration:
-#     description: Revert the last migration if successfully run in the current workflow.
+  revert-migration:
+    description: Revert the last migration if successfully run in the current workflow.
+    steps:
+      - run:
+          name: Revert Migration
+          when: on_fail
+          command: |
+            HAS_MIGRATION_RUN=$(curl -H "token: eb8a3f95-36a6-4953-a9ce-571f4deda6e6" --request GET https://api.memstash.io/values/migration_result)
+            if $HAS_MIGRATION_RUN = "true"
+              then
+                cd /home/circleci/project/backend
+                echo "Reverting migrations"
+                npm run migrations:revert
+              else
+                echo "NO migration has ocurred"
 #     ...
 
 jobs:
@@ -156,7 +169,30 @@ jobs:
             echo $(curl -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" --request GET https://api.memstash.io/values/backend_api) >> .circleci/ansible/inventory
             ansible-playbook -i .circleci/ansible/inventory .circleci/ansible/config-server-playbook.yml
 
-#  run-migrations:
+  run-migrations:
+    docker:
+      - image: circleci/node:12
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: cd /home/circleci/project/backend && npm install
+      - run:
+          name: Run migrations
+          no_output_timeout: 10m
+          command: cd /home/circleci/project/backend && npm run migrations | tee migrations_results.txt
+      - run:
+          name: Save migration result
+          command: |
+            cd /home/circleci/project/backend
+            if grep "executed successfully" migrations_results.txt
+            then
+              curl -H "Content-Type: text/plain" -H "token: eb8a3f95-36a6-4953-a9ce-571f4deda6e6" --request PUT --data "true" https://api.memstash.io/values/migration_result
+            else
+              curl -H "Content-Type: text/plain" -H "token: eb8a3f95-36a6-4953-a9ce-571f4deda6e6" --request PUT --data "false" https://api.memstash.io/values/migration_result
+            fi
+      - revert-migration
+      - destroy-environment
 
 #  deploy-frontend:
 
@@ -169,24 +205,27 @@ jobs:
 workflows:
   build-test-and-deploy:
     jobs:
-      - build-frontend
-      - build-backend
-      - test-frontend:
-          requires:
-            - build-frontend
-      - test-backend:
-          requires:
-            - build-backend
-      - scan-frontend:
-          requires:
-            - test-frontend
-      - scan-backend:
-          requires:
-            - test-backend
-      - deploy-infrastructure:
-          requires:
-            - scan-frontend
-            - scan-backend
-      - configure-infrastructure:
-          requires:
-            - deploy-infrastructure
+      # - build-frontend
+      # - build-backend
+      # - test-frontend:
+      #     requires:
+      #       - build-frontend
+      # - test-backend:
+      #     requires:
+      #       - build-backend
+      # - scan-frontend:
+      #     requires:
+      #       - test-frontend
+      # - scan-backend:
+      #     requires:
+      #       - test-backend
+      # - deploy-infrastructure:
+      #     requires:
+      #       - scan-frontend
+      #       - scan-backend
+      # - configure-infrastructure:
+      #     requires:
+      #       - deploy-infrastructure
+      - run-migrations
+        # requires:
+        #   - configure-infrastructure
