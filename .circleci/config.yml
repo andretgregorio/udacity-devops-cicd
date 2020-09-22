@@ -11,6 +11,10 @@ commands:
           when: on_fail
           command: aws cloudformation delete-stack --stack-name backend-${CIRCLE_WORKFLOW_ID:0:7}
       - run:
+          name: Delete S3 files
+          when: on_fail
+          command: aws s3 rm s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7} --recursive
+      - run:
           name: Destroy Frontend Infrastructure
           when: on_fail
           command: aws cloudformation delete-stack --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7}
@@ -34,6 +38,8 @@ commands:
                 npm run migrations:revert
               else
                 echo "NO migration has ocurred"
+                return 0
+            fi
 #     ...
 
 jobs:
@@ -114,25 +120,25 @@ jobs:
       - image: amazon/aws-cli
     steps:
       - checkout
-      # - run:
-      #     name: Deploy Backend Infrastructure
-      #     command: |
-      #       aws cloudformation deploy \
-      #       --template-file .circleci/files/backend.yml \
-      #       --stack-name backend-${CIRCLE_WORKFLOW_ID:0:7} \
-      #       --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
-      # - run:
-      #     name: Save Backend URL
-      #     when: on_success
-      #     command: |
-      #       BACKEND_API=$(aws ec2 describe-instances \
-      #         --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
-      #         --query 'Reservations[*].Instances[*].PublicDnsName' \
-      #         --output text)
-      #       curl -H "Content-Type: text/plain" -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" \
-      #         --request PUT \
-      #         --data $BACKEND_API \
-      #         https://api.memstash.io/values/backend_api
+      - run:
+          name: Deploy Backend Infrastructure
+          command: |
+            aws cloudformation deploy \
+            --template-file .circleci/files/backend.yml \
+            --stack-name backend-${CIRCLE_WORKFLOW_ID:0:7} \
+            --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
+      - run:
+          name: Save Backend URL
+          when: on_success
+          command: |
+            BACKEND_API=$(aws ec2 describe-instances \
+              --filters "Name=tag:Name,Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
+              --query 'Reservations[*].Instances[*].PublicDnsName' \
+              --output text)
+            curl -H "Content-Type: text/plain" -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" \
+              --request PUT \
+              --data $BACKEND_API \
+              https://api.memstash.io/values/backend_api
       - run:
           name: Deploy Frontend Infrastructure
           command: |
@@ -229,7 +235,39 @@ jobs:
       - revert-migration
       - destroy-environment
 
-#  deploy-backend:
+  deploy-backend:
+    docker:
+      - image: python:3.7-alpine3.11
+    steps:
+      - checkout
+      - add_ssh_keys:
+          fingerprints:
+            - "ea:7d:21:ef:24:86:2a:4f:0b:b1:c3:fa:3f:e9:2a:4d"
+      - run:
+          name: Install AWS CLI
+          command: pip3 install awscli
+      - run:
+          name: Install ansible
+          command: apk add --update ansible
+      - run:
+          name: Install curl
+          command: apk add curl
+      - run:
+          name: Install Open SSH
+          command: apk add openssh-client
+      - run:
+          name: Check folders
+          command: |
+            echo $(pwd)
+            ls /root/project/backend
+      - run:
+          name: Configure backend server
+          command: |
+            echo $(curl -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" --request GET https://api.memstash.io/values/backend_api) >> .circleci/ansible/inventory
+            cd .circleci/ansible
+            ansible-playbook -i inventory deploy-backend-playbook.yml
+      - revert-migration
+      - destroy-environment
 
 #  smoke-test:
 
@@ -260,20 +298,26 @@ workflows:
       #   - scan-frontend
       #   - scan-backend
       - configure-infrastructure:
-          filters:
-            branches:
-              only: main
-          requires:
-            - deploy-infrastructure
-      - run-migrations:
-          filters:
-            branches:
-              only: main
-          requires:
-            - deploy-infrastructure
-      - deploy-frontend:
           # filters:
           #   branches:
           #     only: main
           requires:
             - deploy-infrastructure
+      # - run-migrations:
+      #     # filters:
+      #     #   branches:
+      #     #     only: main
+      #     requires:
+      #       - deploy-infrastructure
+      # - deploy-frontend:
+      #     # filters:
+      #     #   branches:
+      #     #     only: main
+      #     requires:
+      #       - deploy-infrastructure
+      - deploy-backend:
+          # filters:
+          #   branches:
+          #     only: main
+          requires:
+            - configure-infrastructure

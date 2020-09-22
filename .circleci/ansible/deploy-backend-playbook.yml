@@ -1,0 +1,10 @@
+---
+- name: Config backend server
+  hosts: backend-server
+  user: ubuntu
+  gather_facts: False
+  vars:
+    ansible_host_key_checking: false
+    ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+  roles:
+    - deploy
