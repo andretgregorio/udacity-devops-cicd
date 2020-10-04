@@ -1,7 +1,5 @@
 version: 2.1
 
-### It's a good practice to keep your commands at the top of the config file. In this project, you'll need at least 2 commands:
-
 commands:
   destroy-environment:
     description: Destroy backend and frontend cloudformation stacks given a workflow ID.
@@ -23,6 +21,16 @@ commands:
           when: on_fail
           command: aws cloudformation delete-stack --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7}
 
+  export-backend-url:
+    description: Export Backend API URL
+    steps:
+      - run:
+          name: Export backend API URL
+          command: |
+            BACKEND_URL=$(curl -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" --request GET https://api.memstash.io/values/backend_api)
+            export default API_URL=http://$BACKEND_URL:3030
+            echo "API_URL=$API_URL" >> frontend/.env
+
   revert-migration:
     description: Revert the last migration if successfully run in the current workflow.
     steps:
@@ -40,7 +48,6 @@ commands:
                 echo "NO migration has ocurred"
                 return 0
             fi
-#     ...
 
 jobs:
   build-frontend:
@@ -66,6 +73,18 @@ jobs:
       - run:
           name: Build
           command: cd /home/circleci/project/backend && npm run build
+      - run:
+          name: Copy compiled backend for future use in ansible
+          command: |
+            mkdir /tmp/workspace
+            cp ./backend/package.json /tmp/workspace/
+            cd backend/dist
+            tar -zcvf /tmp/workspace/backend.tar.gz ./
+      - persist_to_workspace:
+          root: /tmp/workspace
+          paths:
+            - backend.tar.gz
+            - package.json
 
   test-frontend:
     docker:
@@ -76,8 +95,14 @@ jobs:
           name: Install NPM Dependencies
           command: cd /home/circleci/project/frontend && npm install
       - run:
-          name: Test
-          command: cd /home/circleci/project/frontend && npm run test
+          name: Unit test frontend
+          command: |
+            cd /home/circleci/project/frontend
+            mkdir -p ./reports/junit/
+            npm install --save-dev jest-junit jest-junit-reporter
+            ./node_modules/.bin/jest --ci --runInBand --reporters=default --reporters=jest-junit
+          environment:
+            JEST_JUNIT_OUTPUT_DIR: "./reports/junit/"
 
   test-backend:
     docker:
@@ -146,13 +171,13 @@ jobs:
             --template-file .circleci/files/frontend.yml \
             --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7} \
             --parameter-overrides ID="${CIRCLE_WORKFLOW_ID:0:7}"
-      # - run:
-      #     name: Deploy Cloudfront Infrastructure
-      #     command: |
-      #       aws cloudformation deploy \
-      #       --template-file .circleci/files/cloudfront.yml \
-      #       --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7} \
-      #       --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
+      - run:
+          name: Deploy Cloudfront Infrastructure
+          command: |
+            aws cloudformation deploy \
+            --template-file .circleci/files/cloudfront.yml \
+            --stack-name cloudfront-${CIRCLE_WORKFLOW_ID:0:7} \
+            --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
       - destroy-environment
 
   configure-infrastructure:
@@ -165,7 +190,9 @@ jobs:
             - "ea:7d:21:ef:24:86:2a:4f:0b:b1:c3:fa:3f:e9:2a:4d"
       - run:
           name: Install ansible
-          command: apk add --update ansible
+          command: |
+            apk add --update ansible
+            ansible-galaxy install weareinteractive.environment
       - run:
           name: Install curl
           command: apk add curl
@@ -210,11 +237,7 @@ jobs:
           command: |
             apk --no-cache add curl
             apk add --no-cache --upgrade bash
-      - run:
-          name: Export Backend API URL
-          command: |
-            BACKEND_URL=$(curl -H "token: c1bb8d5a-fbac-4fad-9506-124d34aa4fb6" --request GET https://api.memstash.io/values/backend_api)
-            export default API_URL=$BACKEND_URL
+      - export-backend-url
       - run:
           name: Install NPM
           command: apk add --update npm
@@ -238,17 +261,22 @@ jobs:
   deploy-backend:
     docker:
       - image: python:3.7-alpine3.11
+
     steps:
       - checkout
       - add_ssh_keys:
           fingerprints:
             - "ea:7d:21:ef:24:86:2a:4f:0b:b1:c3:fa:3f:e9:2a:4d"
+      - attach_workspace:
+          at: /tmp/workspace
       - run:
           name: Install AWS CLI
           command: pip3 install awscli
       - run:
           name: Install ansible
-          command: apk add --update ansible
+          command: |
+            apk add --update ansible
+            ansible-galaxy install weareinteractive.environment
       - run:
           name: Install curl
           command: apk add curl
@@ -269,55 +297,93 @@ jobs:
       - revert-migration
       - destroy-environment
 
-#  smoke-test:
+  smoke-test:
+    docker:
+      - image: python:3.7-alpine3.11
+    environment:
+      ID: arns3
+    steps:
+      - checkout
+      - run: apk --no-cache add curl
+      - run:
+          name: Install awscli
+          command: |
+            pip3 install awscli
+      - run:
+          name: smoke test frontend
+          command: |
+            URL="http://frontend-${CIRCLE_WORKFLOW_ID:0:7}.s3-website-${AWS_DEFAULT_REGION}.amazonaws.com/#/employees"            
+            if curl -s ${URL} | grep "Welcome"
+              then
+                return 1
+              else
+                return 0
+            fi
+      - run:
+          name: smoke test for backend.
+          command: |
+            BACKEND_IP=$(aws ec2 describe-instances \
+              --filters "Name=tag:Name, Values=backend-${CIRCLE_WORKFLOW_ID:0:7}" \
+              --query 'Reservations[*].Instances[*].PublicIpAddress' \
+              --output text)
+            curl "http://${BACKEND_IP}:3030/api/status"
+      - revert-migration
+      - destroy-environment
 
 #  cloudfront-update:
 
 workflows:
   build-test-and-deploy:
     jobs:
-      # - build-frontend
-      # - build-backend
-      # - test-frontend:
-      #     requires:
-      #       - build-frontend
-      # - test-backend:
-      #     requires:
-      #       - build-backend
-      # - scan-frontend:
-      #     requires:
-      #       - test-frontend
-      # - scan-backend:
-      #     requires:
-      #       - test-backend
-      - deploy-infrastructure
-      # filters:
-      #   branches:
-      #     only: main
-      # requires:
-      #   - scan-frontend
-      #   - scan-backend
+      - build-frontend
+      - build-backend
+      - test-frontend:
+          requires:
+            - build-frontend
+      - test-backend:
+          requires:
+            - build-backend
+      - scan-frontend:
+          requires:
+            - test-frontend
+      - scan-backend:
+          requires:
+            - test-backend
+      - deploy-infrastructure:
+          # filters:
+          #   branches:
+          #     only: main
+          requires:
+            - scan-frontend
+            - scan-backend
       - configure-infrastructure:
           # filters:
           #   branches:
           #     only: main
           requires:
             - deploy-infrastructure
-      # - run-migrations:
-      #     # filters:
-      #     #   branches:
-      #     #     only: main
-      #     requires:
-      #       - deploy-infrastructure
-      # - deploy-frontend:
-      #     # filters:
-      #     #   branches:
-      #     #     only: main
-      #     requires:
-      #       - deploy-infrastructure
+      - run-migrations:
+          # filters:
+          #   branches:
+          #     only: main
+          requires:
+            - deploy-infrastructure
+      - deploy-frontend:
+          # filters:
+          #   branches:
+          #     only: main
+          requires:
+            - deploy-infrastructure
       - deploy-backend:
           # filters:
           #   branches:
           #     only: main
           requires:
             - configure-infrastructure
+      - smoke-test:
+          # filters:
+          #   branches:
+          #     only: main
+          requires:
+            - deploy-frontend
+            - deploy-backend
