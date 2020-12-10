@@ -17,3 +17,4 @@
   roles:
     - weareinteractive.environment
     - configure-server
+    - configure-prometheus-node-exporter
