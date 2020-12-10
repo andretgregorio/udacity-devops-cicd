@@ -332,27 +332,27 @@ jobs:
           command: |
             export OldWorkflowID=$(aws cloudformation list-exports --query "Exports[?Name=='WorkflowID'].Value" --no-paginate --output text)
             echo Old Workflow Id: "${OldWorkflowID}"
-
             if [ -n "${OldWorkflowID}" ]
             then
               echo "Updating existing CloudFront stack..."
               aws cloudformation update-stack \
-                --template-file .circleci/files/cloudfront.yml \
-                --stack-name cloudfront-udapepople \
-                --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
+                --template-body file://./.circleci/files/cloudfront.yml \
+                --stack-name cloudfront-udapeople \
+                --parameters ParameterKey=WorkflowID,ParameterValue=${CIRCLE_WORKFLOW_ID:0:7}
 
               echo "Saving old workflow id..."
               curl -H "Content-Type: text/plain" -H "token: 55d1f101-ab86-42bb-8bea-ea171a873220" --request PUT --data "${OldWorkflowID}" https://api.memstash.io/values/old_workflow_id
             else
               echo "Creating new CloudFront sack..."
-              aws cloudformation reate-stack \
-              --template-file .circleci/files/cloudfront.yml \
-              --stack-name cloudfront-udapeople \
-              --parameter-overrides WorkflowID="${CIRCLE_WORKFLOW_ID:0:7}"
+              aws cloudformation create-stack \
+                --template-body file://./.circleci/files/cloudfront.yml \
+                --stack-name cloudfront-udapeople \
+                --parameters ParameterKey=WorkflowID,ParameterValue=${CIRCLE_WORKFLOW_ID:0:7}
+            fi
 
   destroy-old-stack:
     docker:
-      - image: python:3.7-alpine3.11
+      - image: amazon/aws-cli
     steps:
       - checkout
       - run:
@@ -363,7 +363,7 @@ jobs:
 
             aws cloudformation delete-stack --stack-name backend-${OldWorkflowID}
             aws s3 rm s3://udapeople-${CIRCLE_WORKFLOW_ID:0:7} --recursive
-            aws cloudformation delete-stack --stack-name frontend-${CIRCLE_WORKFLOW_ID:0:7}
+            aws cloudformation delete-stack --stack-name frontend-${OldWorkflowID}
 
 workflows:
   build-test-and-deploy:
@@ -420,3 +420,15 @@ workflows:
           requires:
             - deploy-frontend
             - deploy-backend
+      - promote-to-production:
+          # filters:
+          #   branches:
+          #     only: main
+          requires:
+            - smoke-test
+      - destroy-old-stack:
+          # filters:
+          #   branches:
+          #     only: main
+          requires:
+            - promote-to-production
