@@ -383,52 +383,52 @@ workflows:
           requires:
             - test-backend
       - deploy-infrastructure:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - scan-frontend
             - scan-backend
       - configure-infrastructure:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - deploy-infrastructure
       - run-migrations:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - deploy-infrastructure
       - deploy-frontend:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - deploy-infrastructure
       - deploy-backend:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - configure-infrastructure
       - smoke-test:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - deploy-frontend
             - deploy-backend
       - promote-to-production:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - smoke-test
       - destroy-old-stack:
-          # filters:
-          #   branches:
-          #     only: main
+          filters:
+            branches:
+              only: main
           requires:
             - promote-to-production
