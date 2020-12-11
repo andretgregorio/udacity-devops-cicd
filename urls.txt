@@ -1,0 +1,5 @@
+01. https://github.com/andretgregorio/udacity-devops-project03
+02. https://udapeople-6a396e0.s3-us-west-2.amazonaws.com/index.html#/employees
+03. d1n79z314h8jfa.cloudfront.net
+04. ec2-54-244-126-206.us-west-2.compute.amazonaws.com:3030
+05. http://ec2-34-220-142-110.us-west-2.compute.amazonaws.com:9090/graph
